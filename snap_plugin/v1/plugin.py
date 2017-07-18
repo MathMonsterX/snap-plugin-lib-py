@@ -374,10 +374,10 @@ class Plugin(object):
     def _generate_preamble_and_serve(self):
         if self.tls_enabled:
             server_creds = grpc.ssl_server_credentials(
-                (open(self.key_path).read(), open(self.client_certs).read()), 
-                open(self.root_certs).read(), 
-                True if self.root_cert is not None else False)
-            self._port = self.server.add_secure_port('127.0.0.1:{!s}'.format(0), self.server_creds)
+                (open(self.meta.key_path).read(), open(self.meta.client_certs).read()), 
+                open(self.meta.root_certs).read(), 
+                True if self.meta.root_cert is not None else False)
+            self._port = self.server.add_secure_port('127.0.0.1:{!s}'.format(0), server_creds)
         else:
             self._port = self.server.add_insecure_port('127.0.0.1:{!s}'.format(0))
 
