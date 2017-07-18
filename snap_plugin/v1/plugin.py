@@ -335,9 +335,6 @@ class Plugin(object):
         self._parse_args()
 
         LOG.debug("plugin start called..")
-        # Set up server TLS security if enabled
-        if self.tls_enabled:
-            self._setup_security()
 
         if self._mode == PluginMode.normal:
             # start grpc server
@@ -374,24 +371,14 @@ class Plugin(object):
             sys.stdout.write("At the time being, plugin diagnostic is supported only by Collector plugins.")
             sys.stdout.flush()
 
-    def _setup_security(self):
-        with open(self.meta.root_cert_path) as f:
-            root_certs = f.read()
-        with open(self.meta.cert_path) as f:
-            private_key = f.read()
-        with open(self.meta.key_path) as f:
-            client_certs = f.read()
-
     def _generate_preamble_and_serve(self):
         if self.tls_enabled:
             server_creds = grpc.ssl_server_credentials(
-                (self.key_path, self.client_certs), 
-                self.root_certs, 
+                (open(self.key_path).read(), open(self.client_certs).read()), 
+                open(self.root_certs).read(), 
                 True if self.root_cert is not None else False)
-            LOG.info("CREDENTIALS: {}".format(server_creds))
             self._port = self.server.add_secure_port('127.0.0.1:{!s}'.format(0), self.server_creds)
         else:
-            LOG.info("NO CREDENTIALS")
             self._port = self.server.add_insecure_port('127.0.0.1:{!s}'.format(0))
 
         self.server.start()
@@ -479,6 +466,8 @@ class Plugin(object):
             self.meta.cert_path = self._args.cert_path
             self.meta.root_cert_path = self._args.root_cert_path
             self.meta.key_path = self._args.key_path
+            if self.meta.cert_path is None or self.meta.key_path is None:
+                LOG.error("Improper TLS configuration provided: expected set flags 'key-path' and 'cert-path'.")
 
     def _set_log_level(self):
         """Sets the log level provided by the framework.
