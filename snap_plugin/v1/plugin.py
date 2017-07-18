@@ -223,7 +223,9 @@ class Meta(object):
             for the provided plugin and the metrics it exposes (default=500ms).
         rpc_type (:py:class:`RPCType`)> RPC type
         rpc_version (:obj:`int`): RPC version
-        unsecure (:obj:`bool`): Unsecure
+        root_cert_path (:obj:`string`): Path to the root certificates.
+        cert_path (:obj:`string`): Path to the client certificates.
+        key_path (:obj:`string`): Path to the server's private key.
     """
     def __init__(self,
                  type,
@@ -235,7 +237,9 @@ class Meta(object):
                  cache_ttl=None,
                  rpc_type=RPCType.grpc,
                  rpc_version=1,
-                 unsecure=True):
+                 root_cert_path=None,
+                 cert_path=None,
+                 key_path=None):
         self.name = name
         self.version = version
         setattr(sys.modules["snap_plugin.v1"], "PLUGIN_VERSION", version)
@@ -246,7 +250,9 @@ class Meta(object):
         self.cache_ttl = cache_ttl
         self.rpc_type = rpc_type
         self.rpc_version = rpc_version
-        self.unsecure = unsecure
+        self.root_cert_path = root_cert_path
+        self.cert_path = cert_path
+        self.key_path= key_path
 
 
 @six.add_metaclass(ABCMeta)
@@ -271,6 +277,7 @@ class Plugin(object):
         self._config = {}
         self._flags = _Flags()
         self.standalone_server = None
+        self.tls_enabled = False
 
         # init argparse module and add arguments
         self._parser = argparse.ArgumentParser(description="%(prog)s - a Snap framework plugin.",
@@ -283,6 +290,10 @@ class Plugin(object):
             ("config", FlagType.value, "JSON Snap global config"),
             ("stand-alone", FlagType.toggle, "enable stand alone mode"),
             ("stand-alone-port", FlagType.value, "http port for stand alone mode", 8181),
+            ("tls-enabled", FlagType.toggle, "enable TLS"),
+            ("cert-path", FlagType.value, "Path where the TLS certificate is stored"),
+            ("root-cert-path", FlagType.value, "Path where the root TLS certificate is stored"),
+            ("key-path", FlagType.value, "Path where the key file for TLS is stored"),
             ("log-level", FlagType.value, "logging level 0:panic - 5:debug", 3)
         ]
         self._flags.add_multiple(flags)
@@ -324,6 +335,10 @@ class Plugin(object):
         self._parse_args()
 
         LOG.debug("plugin start called..")
+        # Set up server TLS security if enabled
+        if self.tls_enabled:
+            self._setup_security()
+
         if self._mode == PluginMode.normal:
             # start grpc server
             preamble = self._generate_preamble_and_serve()
@@ -359,8 +374,26 @@ class Plugin(object):
             sys.stdout.write("At the time being, plugin diagnostic is supported only by Collector plugins.")
             sys.stdout.flush()
 
+    def _setup_security(self):
+        with open(self.meta.root_cert_path) as f:
+            root_certs = f.read()
+        with open(self.meta.cert_path) as f:
+            private_key = f.read()
+        with open(self.meta.key_path) as f:
+            client_certs = f.read()
+
     def _generate_preamble_and_serve(self):
-        self._port = self.server.add_insecure_port('127.0.0.1:{!s}'.format(0))
+        if self.tls_enabled:
+            server_creds = grpc.ssl_server_credentials(
+                (self.key_path, self.client_certs), 
+                self.root_certs, 
+                True if self.root_cert is not None else False)
+            LOG.info("CREDENTIALS: {}".format(server_creds))
+            self._port = self.server.add_secure_port('127.0.0.1:{!s}'.format(0), self.server_creds)
+        else:
+            LOG.info("NO CREDENTIALS")
+            self._port = self.server.add_insecure_port('127.0.0.1:{!s}'.format(0))
+
         self.server.start()
         return json.dumps(
             {
@@ -372,16 +405,20 @@ class Plugin(object):
                     "RPCVersion": self.meta.rpc_version,
                     "ConcurrencyCount": self.meta.concurrency_count,
                     "Exclusive": self.meta.exclusive,
-                    "Unsecure": self.meta.unsecure,
+                    "RootCertFilePath": self.meta.root_cert_path,
+                    "CertFilePath": self.meta.cert_path,
+                    "KeyFilePath": self.meta.key_path,
                     "CacheTTL": self.meta.cache_ttl,
                     "RoutingStrategy": self.meta.routing_strategy,
                 },
+                "TLSEnabled": self.tls_enabled,
                 "ListenAddress": "127.0.0.1:{!s}".format(self._port),
                 "Token": None,
                 "PublicKey": None,
                 "Type": self.meta.type,
                 "ErrorMessage": None,
                 "State": PluginResponseState.plugin_success,
+                "ServerCreds": self.server_creds,
             },
             cls=_EnumEncoder
         ) + "\n"
@@ -435,6 +472,13 @@ class Plugin(object):
                   self.stop_plugin,
                   self._is_shutting_down),
             kwargs={"timeout": self._get_ping_timeout_duration()})
+
+        # Retrieve certification arguments
+        self.tls_enabled = self._args.tls_enabled
+        if self.tls_enabled:
+            self.meta.cert_path = self._args.cert_path
+            self.meta.root_cert_path = self._args.root_cert_path
+            self.meta.key_path = self._args.key_path
 
     def _set_log_level(self):
         """Sets the log level provided by the framework.
