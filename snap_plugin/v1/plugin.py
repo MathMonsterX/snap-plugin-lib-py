@@ -15,6 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os.path
 import argparse
 import json
 import logging
@@ -203,6 +204,8 @@ class FlagType(Enum):
     value = 0
     toggle = 1
 
+class MissingRequiredArgument(Exception):
+   pass
 
 class Meta(object):
     """Snap plugin meta
@@ -235,7 +238,9 @@ class Meta(object):
                  cache_ttl=None,
                  rpc_type=RPCType.grpc,
                  rpc_version=1,
-                 unsecure=True):
+                 root_cert_path=None,
+                 server_cert_path=None,
+                 private_key_path=None):
         self.name = name
         self.version = version
         setattr(sys.modules["snap_plugin.v1"], "PLUGIN_VERSION", version)
@@ -246,7 +251,9 @@ class Meta(object):
         self.cache_ttl = cache_ttl
         self.rpc_type = rpc_type
         self.rpc_version = rpc_version
-        self.unsecure = unsecure
+        self.root_cert_path = root_cert_path
+        self.server_cert_path = server_cert_path
+        self.private_key_path = private_key_path
 
 
 @six.add_metaclass(ABCMeta)
@@ -262,7 +269,7 @@ class Plugin(object):
     def __init__(self):
         self.meta = None
         self.proxy = None
-        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=10)) 
         self._port = 0
         self._last_ping = time.time()
         self._shutting_down = False
@@ -271,6 +278,7 @@ class Plugin(object):
         self._config = {}
         self._flags = _Flags()
         self.standalone_server = None
+        self.tls_enabled=False,
 
         # init argparse module and add arguments
         self._parser = argparse.ArgumentParser(description="%(prog)s - a Snap framework plugin.",
@@ -281,9 +289,14 @@ class Plugin(object):
 
         flags = [
             ("config", FlagType.value, "JSON Snap global config"),
+            ("port", FlagType.value, "port to run plugin"),
             ("stand-alone", FlagType.toggle, "enable stand alone mode"),
             ("stand-alone-port", FlagType.value, "http port for stand alone mode", 8181),
-            ("log-level", FlagType.value, "logging level 0:panic - 5:debug", 3)
+            ("log-level", FlagType.value, "logging level 0:panic - 5:debug", 3),
+            ("tls-enabled", FlagType.toggle, "enable tls"),
+            ("root-cert", FlagType.value, "path to root certificate"),
+            ("private-key", FlagType.value, "path to server private key"),
+            ("server-cert", FlagType.value, "path to server certificate"),
         ]
         self._flags.add_multiple(flags)
 
@@ -360,7 +373,18 @@ class Plugin(object):
             sys.stdout.flush()
 
     def _generate_preamble_and_serve(self):
-        self._port = self.server.add_insecure_port('127.0.0.1:{!s}'.format(0))
+        if self.tls_enabled:
+            self._TLS_setup()
+            try:
+                credentials = self._generate_TLS_credentials()
+            except Exception as e:
+                LOG.error(str(e))
+                raise e
+            self._port = self.server.add_secure_port('127.0.0.1:{}'.format(self._port), credentials)
+            LOG.info("opened secure port on {}".format(self._port))
+        else:
+            self._port = self.server.add_insecure_port('127.0.0.1:{}'.format(self._port))
+            LOG.info("opened insecure port on {}".format(self._port))
         self.server.start()
         return json.dumps(
             {
@@ -372,10 +396,13 @@ class Plugin(object):
                     "RPCVersion": self.meta.rpc_version,
                     "ConcurrencyCount": self.meta.concurrency_count,
                     "Exclusive": self.meta.exclusive,
-                    "Unsecure": self.meta.unsecure,
                     "CacheTTL": self.meta.cache_ttl,
                     "RoutingStrategy": self.meta.routing_strategy,
+                    "RootCertPaths": self.meta.root_cert_path,
+                    "ServerCertPath": self.meta.server_cert_path,
+                    "PrivateKeyPath": self.meta.private_key_path,
                 },
+                "TLSEnabled": self.tls_enabled,
                 "ListenAddress": "127.0.0.1:{!s}".format(self._port),
                 "Token": None,
                 "PublicKey": None,
@@ -386,6 +413,7 @@ class Plugin(object):
             cls=_EnumEncoder
         ) + "\n"
 
+    
     def _parse_args(self):
         """Parse command line arguments, parse config and initialize monitor"""
 
@@ -435,6 +463,26 @@ class Plugin(object):
                   self.stop_plugin,
                   self._is_shutting_down),
             kwargs={"timeout": self._get_ping_timeout_duration()})
+
+        # check if the secure flag has been added
+        self.tls_enabled = self._args.tls_enabled
+    
+    def _TLS_setup(self):
+        self.meta.server_cert_path = self._args.server_cert
+        self.meta.private_key_path = self._args.private_key
+        self.meta.root_cert_path = self._args.root_cert
+        if self.meta.private_key_path is None:
+            raise MissingRequiredArgument("private-key argument is missing. Required with tls-enabled.")
+        elif self.meta.server_cert_path is None:
+            raise MissingRequiredArgument("server-cert argument is missing. Required with tls-enabled.")
+        elif self.meta.root_cert_path is None:
+            raise MissingRequiredArgument("root-cert argument is missing. Required with tls-enabled.")
+
+    def _generate_TLS_credentials(self):
+        key = open(self.meta.private_key_path).read()
+        cert = open(self.meta.server_cert_path).read()
+        root_cert = open(self.meta.root_cert_path).read()
+        return grpc.ssl_server_credentials([(key, cert)], root_cert, True)
 
     def _set_log_level(self):
         """Sets the log level provided by the framework.

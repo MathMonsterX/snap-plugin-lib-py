@@ -29,6 +29,23 @@ from snap_plugin.v1.publisher import Publisher
 
 from .mock_plugins import MockCollector
 
+def test_tls():
+    root_cert = "my/fake/root/cert/path.crt"
+    server_cert = "my/fake/cert/path.crt"
+    private_key = "my/fake/key/path.key"
+    sys.argv = [
+            "--tls-enabled", 
+            "--root-cert", root_cert,
+            "--server-cert", server_cert,
+            "--private-key", private_key]
+    col = MockCollector("MyCollector", 1)
+    thread = Thread(target=col.start)
+    thread.start()
+
+    assert col.tls_enabled 
+    #assert col.meta.root_cert_path == root_cert
+    #assert col.meta.server_cert_path == server_cert
+    #assert col.meta.private_key_path == private_key
 
 def test_collector():
     with pytest.raises(TypeError) as excinfo:
