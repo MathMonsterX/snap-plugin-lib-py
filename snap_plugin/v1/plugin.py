@@ -15,7 +15,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
 import argparse
 import json
 import logging
@@ -204,8 +203,10 @@ class FlagType(Enum):
     value = 0
     toggle = 1
 
+
 class MissingRequiredArgument(Exception):
    pass
+
 
 class Meta(object):
     """Snap plugin meta
@@ -240,7 +241,8 @@ class Meta(object):
                  rpc_version=1,
                  root_cert_path=None,
                  server_cert_path=None,
-                 private_key_path=None):
+                 private_key_path=None,
+                 cipher_suites=None):
         self.name = name
         self.version = version
         setattr(sys.modules["snap_plugin.v1"], "PLUGIN_VERSION", version)
@@ -254,7 +256,7 @@ class Meta(object):
         self.root_cert_path = root_cert_path
         self.server_cert_path = server_cert_path
         self.private_key_path = private_key_path
-
+        self.cipher_suites = cipher_suites
 
 @six.add_metaclass(ABCMeta)
 class Plugin(object):
@@ -269,7 +271,7 @@ class Plugin(object):
     def __init__(self):
         self.meta = None
         self.proxy = None
-        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=10)) 
+        self.server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
         self._port = 0
         self._last_ping = time.time()
         self._shutting_down = False
@@ -278,7 +280,7 @@ class Plugin(object):
         self._config = {}
         self._flags = _Flags()
         self.standalone_server = None
-        self.tls_enabled=False,
+        self.tls_enabled = False,
 
         # init argparse module and add arguments
         self._parser = argparse.ArgumentParser(description="%(prog)s - a Snap framework plugin.",
@@ -289,7 +291,7 @@ class Plugin(object):
 
         flags = [
             ("config", FlagType.value, "JSON Snap global config"),
-            ("port", FlagType.value, "port to run plugin"),
+            ("port", FlagType.value, "GRPC server port"),
             ("stand-alone", FlagType.toggle, "enable stand alone mode"),
             ("stand-alone-port", FlagType.value, "http port for stand alone mode", 8181),
             ("log-level", FlagType.value, "logging level 0:panic - 5:debug", 3),
@@ -324,6 +326,7 @@ class Plugin(object):
             - Finding an available port
             - Starting the gRPC server
             - Printing to STDOUT data (JSON) for handshaking with Snap
+            - Configuring a secure (TLS) or insecure port
 
         Collector plugin started without config provided in command line arguments
         will run in diagnostic mode, which will print out following info:
@@ -374,14 +377,14 @@ class Plugin(object):
 
     def _generate_preamble_and_serve(self):
         if self.tls_enabled:
-            self._TLS_setup()
             try:
+                self._TLS_setup()
                 credentials = self._generate_TLS_credentials()
+                self._port = self.server.add_secure_port('127.0.0.1:{}'.format(self._port), credentials)
+                LOG.info("Opened secure port on {}.".format(self._port))
             except Exception as e:
                 LOG.error(str(e))
-                raise e
-            self._port = self.server.add_secure_port('127.0.0.1:{}'.format(self._port), credentials)
-            LOG.info("opened secure port on {}".format(self._port))
+                LOG.info("TLS setup failed. Unabled to add secure port.")
         else:
             self._port = self.server.add_insecure_port('127.0.0.1:{}'.format(self._port))
             LOG.info("opened insecure port on {}".format(self._port))
@@ -398,7 +401,7 @@ class Plugin(object):
                     "Exclusive": self.meta.exclusive,
                     "CacheTTL": self.meta.cache_ttl,
                     "RoutingStrategy": self.meta.routing_strategy,
-                    "RootCertPaths": self.meta.root_cert_path,
+                    "RootCertPath": self.meta.root_cert_path,
                     "ServerCertPath": self.meta.server_cert_path,
                     "PrivateKeyPath": self.meta.private_key_path,
                 },
@@ -412,7 +415,6 @@ class Plugin(object):
             },
             cls=_EnumEncoder
         ) + "\n"
-
     
     def _parse_args(self):
         """Parse command line arguments, parse config and initialize monitor"""
@@ -464,10 +466,9 @@ class Plugin(object):
                   self._is_shutting_down),
             kwargs={"timeout": self._get_ping_timeout_duration()})
 
+    def _TLS_setup(self):
         # check if the secure flag has been added
         self.tls_enabled = self._args.tls_enabled
-    
-    def _TLS_setup(self):
         self.meta.server_cert_path = self._args.server_cert
         self.meta.private_key_path = self._args.private_key
         self.meta.root_cert_path = self._args.root_cert

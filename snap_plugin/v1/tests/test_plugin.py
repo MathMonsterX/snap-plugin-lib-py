@@ -52,7 +52,7 @@ def _test_tls_vars_set(plugin):
     except:
         pass
     # Check that the proper variables are set
-#    assert plugin.tls_enabled 
+    assert plugin.tls_enabled 
     assert plugin.meta.root_cert_path == root_cert
     assert plugin.meta.server_cert_path == server_cert
     assert plugin.meta.private_key_path == private_key
@@ -60,23 +60,6 @@ def _test_tls_vars_set(plugin):
     os.remove(root_cert)
     os.remove(server_cert)
     os.remove(private_key)
-
-def _test_tls_missing_args_raise_exc(plugin):
-    # Create the files for test
-    root_cert = "root.crt"
-    server_cert = "server.crt"
-    private_key = "private.key"
-    # Manipulate proper input args
-    sys.argv = [
-            "--config", '{"key": "value", "answer": 42}',
-            "--tls-enabled", 
-            #"--root-cert", root_cert,
-            "--server-cert", server_cert,
-            "--private-key", private_key]
-    # Ignore exceptions related to the files being invalid
-    with pytest.raises(MissingRequiredArgument) as excinfo:
-        plugin.start_plugin()
-    assert "root-cert argument is missing. Required with tls-enabled." in str(excinfo.value)
 
 def _test_tls_bad_file_raise_exc(plugin):
     # Create the files for test
@@ -107,8 +90,6 @@ def test_tls():
     plugin.meta = Meta(derived, "mytest", 1)
     _test_tls_missing_args_raise_exc(plugin)
     plugin = derived()
-    plugin.meta = Meta(derived, "mytest", 1)
-    _test_tls_bad_file_raise_exc(plugin)
 
 def test_collector():
     with pytest.raises(TypeError) as excinfo:
