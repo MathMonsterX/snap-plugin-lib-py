@@ -299,6 +299,7 @@ class Plugin(object):
             ("root-cert", FlagType.value, "path to root certificate"),
             ("private-key", FlagType.value, "path to server private key"),
             ("server-cert", FlagType.value, "path to server certificate"),
+            ("ciphers", FlagType.value, "cipher suites to use"),
         ]
         self._flags.add_multiple(flags)
 
@@ -379,12 +380,14 @@ class Plugin(object):
         if self.tls_enabled:
             try:
                 self._TLS_setup()
+                LOG.debug("setup complete")
                 credentials = self._generate_TLS_credentials()
+                LOG.debug("creds generated")
                 self._port = self.server.add_secure_port('127.0.0.1:{}'.format(self._port), credentials)
                 LOG.info("Opened secure port on {}.".format(self._port))
             except Exception as e:
                 LOG.error(str(e))
-                LOG.info("TLS setup failed. Unabled to add secure port.")
+                LOG.info("TLS setup failed. Unable to add secure port.")
         else:
             self._port = self.server.add_insecure_port('127.0.0.1:{}'.format(self._port))
             LOG.info("opened insecure port on {}".format(self._port))
@@ -472,18 +475,28 @@ class Plugin(object):
         self.meta.server_cert_path = self._args.server_cert
         self.meta.private_key_path = self._args.private_key
         self.meta.root_cert_path = self._args.root_cert
+        self.meta.cipher_suites = self._args.ciphers if self._args.ciphers is not None else None
+        # Check that all required variables are set
         if self.meta.private_key_path is None:
             raise MissingRequiredArgument("private-key argument is missing. Required with tls-enabled.")
         elif self.meta.server_cert_path is None:
             raise MissingRequiredArgument("server-cert argument is missing. Required with tls-enabled.")
         elif self.meta.root_cert_path is None:
             raise MissingRequiredArgument("root-cert argument is missing. Required with tls-enabled.")
+        # Check that each provided path is valid
+        if not os.isfile(self.meta.server_cert_path):
+            raise IO
+        os.isfile(self.meta.private_key_path)
+        os.isfile(self.meta.root_cert_path)
+        if self.meta.root_cert_path
+        if self.meta.cipher_suites is not None:
+            os.putenv("GRPC_SSL_CIPHER_SUITES", self.meta.cipher_suites)
 
     def _generate_TLS_credentials(self):
-        key = open(self.meta.private_key_path).read()
-        cert = open(self.meta.server_cert_path).read()
-        root_cert = open(self.meta.root_cert_path).read()
-        return grpc.ssl_server_credentials([(key, cert)], root_cert, True)
+        key = open(self.meta.root_cert_path).read().encode()
+        key = open(self.meta.private_key_path).read().encode()
+        cert = open(self.meta.server_cert_path).read().encode()
+        return grpc.ssl_server_credentials([(key, cert)], root_certs, True)
 
     def _set_log_level(self):
         """Sets the log level provided by the framework.

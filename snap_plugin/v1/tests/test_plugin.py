@@ -61,7 +61,7 @@ def _test_tls_vars_set(plugin):
     os.remove(server_cert)
     os.remove(private_key)
 
-def _test_tls_bad_file_raise_exc(plugin):
+def _test_tls_bad_file_raises_exc(plugin):
     # Create the files for test
     root_cert = "root.crt"
     server_cert = "server.crt"
@@ -81,6 +81,9 @@ def _test_tls_bad_file_raise_exc(plugin):
 def test_tls():
     # Generate a derived type of Plugin for testing purposes
     derived = type('Derived', (Plugin,), {'get_config_policy':None})
+    def override(self):
+        return ""
+    setattr(derived, 'get_config_policy', override)
     plugin = derived()
     # If a meta is not created first, then this test fails
     # on a None type error. Here we set Meta.
@@ -88,8 +91,7 @@ def test_tls():
     _test_tls_vars_set(plugin)
     plugin = derived()
     plugin.meta = Meta(derived, "mytest", 1)
-    _test_tls_missing_args_raise_exc(plugin)
-    plugin = derived()
+    _test_tls_bad_file_raises_exc(plugin)
 
 def test_collector():
     with pytest.raises(TypeError) as excinfo:
