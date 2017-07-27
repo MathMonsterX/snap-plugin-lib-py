@@ -483,20 +483,14 @@ class Plugin(object):
             raise MissingRequiredArgument("server-cert argument is missing. Required with tls-enabled.")
         elif self.meta.root_cert_path is None:
             raise MissingRequiredArgument("root-cert argument is missing. Required with tls-enabled.")
-        # Check that each provided path is valid
-        if not os.isfile(self.meta.server_cert_path):
-            raise IO
-        os.isfile(self.meta.private_key_path)
-        os.isfile(self.meta.root_cert_path)
-        if self.meta.root_cert_path
         if self.meta.cipher_suites is not None:
             os.putenv("GRPC_SSL_CIPHER_SUITES", self.meta.cipher_suites)
 
     def _generate_TLS_credentials(self):
-        key = open(self.meta.root_cert_path).read().encode()
+        root_cert = open(self.meta.root_cert_path).read().encode()
         key = open(self.meta.private_key_path).read().encode()
         cert = open(self.meta.server_cert_path).read().encode()
-        return grpc.ssl_server_credentials([(key, cert)], root_certs, True)
+        return grpc.ssl_server_credentials([(key, cert)], root_cert, True)
 
     def _set_log_level(self):
         """Sets the log level provided by the framework.

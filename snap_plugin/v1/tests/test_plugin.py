@@ -73,7 +73,6 @@ def _test_tls_bad_file_raises_exc(plugin):
             "--root-cert", root_cert,
             "--server-cert", server_cert,
             "--private-key", private_key]
-    # Ignore exceptions related to the files being invalid
     with pytest.raises(IOError) as excinfo:
         plugin.start_plugin()
     assert "No such file or directory" in str(excinfo.value)
@@ -92,6 +91,7 @@ def test_tls():
     plugin = derived()
     plugin.meta = Meta(derived, "mytest", 1)
     _test_tls_bad_file_raises_exc(plugin)
+
 
 def test_collector():
     with pytest.raises(TypeError) as excinfo:
