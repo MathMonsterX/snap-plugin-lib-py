@@ -36,6 +36,7 @@ def _test_tls_vars_set(plugin):
     root_cert = "root.crt"
     server_cert = "server.crt"
     private_key = "private.key"
+    ciphers =  ["ECDHE-RSA-AES256-GCM-SHA384", "ECDHE-ECDSA-AES256-GCM-SHA384"]
     open(root_cert, "w+")
     open(server_cert, "w+")
     open(private_key, "w+")
@@ -45,10 +46,13 @@ def _test_tls_vars_set(plugin):
             "--tls-enabled", 
             "--root-cert", root_cert,
             "--server-cert", server_cert,
-            "--private-key", private_key]
+            "--private-key", private_key,
+            "--ciphers", ":".join(ciphers) 
+            ]
     # Ignore exceptions related to the files being invalid
     try:
-        plugin.start_plugin()
+        plugin._parse_args()
+        plugin._TLS_setup()
     except:
         pass
     # Check that the proper variables are set
@@ -56,6 +60,7 @@ def _test_tls_vars_set(plugin):
     assert plugin.meta.root_cert_path == root_cert
     assert plugin.meta.server_cert_path == server_cert
     assert plugin.meta.private_key_path == private_key
+    assert os.getenv("GRPC_SSL_CIPHER_SUITES") == "ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES256-GCM-SHA384"
     # Remove the test files
     os.remove(root_cert)
     os.remove(server_cert)
@@ -74,7 +79,9 @@ def _test_tls_bad_file_raises_exc(plugin):
             "--server-cert", server_cert,
             "--private-key", private_key]
     with pytest.raises(IOError) as excinfo:
-        plugin.start_plugin()
+            plugin._parse_args()
+            plugin._TLS_setup()
+            plugin._generate_TLS_credentials()
     assert "No such file or directory" in str(excinfo.value)
 
 def test_tls():
