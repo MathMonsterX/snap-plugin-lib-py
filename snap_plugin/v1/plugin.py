@@ -251,6 +251,29 @@ class Meta(object):
         self.rpc_version = rpc_version
         self.unsecure = unsecure
 
+    def __str__(self):
+        class_variables = [attr for attr in dir(self)
+                           if not callable(getattr(self, attr)) and not attr.startswith("_")]
+        print class_variables
+        formatted_vars = self._format_vars(class_variables)
+        print "class: {}".format(class_variables)
+        print "fmt: {}".format(formatted_vars)
+        return json.dumps({fmt_var: getattr(self, var)
+                          for var, fmt_var in zip(class_variables, formatted_vars)})
+
+    def _format_vars(self, variables):
+        cpy_vars = []
+        for var in variables:
+            parts = var.split("_")
+            for j, part in enumerate(parts):
+                print part
+                if not any(char in list("aeiou") for char in part):
+                    parts[j] = part.upper()
+                else:
+                    parts[j] = part.capitalize()
+            cpy_vars.append("".join(parts))
+        return cpy_vars
+
 
 @six.add_metaclass(ABCMeta)
 class Plugin(object):
@@ -367,18 +390,7 @@ class Plugin(object):
         self.server.start()
         return json.dumps(
             {
-                "Meta": {
-                    "Name": self.meta.name,
-                    "Version": self.meta.version,
-                    "Type": self.meta.type,
-                    "RPCType": self.meta.rpc_type,
-                    "RPCVersion": self.meta.rpc_version,
-                    "ConcurrencyCount": self.meta.concurrency_count,
-                    "Exclusive": self.meta.exclusive,
-                    "Unsecure": self.meta.unsecure,
-                    "CacheTTL": self.meta.cache_ttl,
-                    "RoutingStrategy": self.meta.routing_strategy,
-                },
+                "Meta": str(self.meta),
                 "ListenAddress": "127.0.0.1:{!s}".format(self._port),
                 "Token": None,
                 "PublicKey": None,
