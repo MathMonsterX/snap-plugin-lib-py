@@ -258,6 +258,7 @@ class Meta(object):
                  cache_ttl=None,
                  rpc_type=RPCType.grpc,
                  rpc_version=1,
+                 tls_enabled=False,
                  root_cert_paths=None,
                  server_cert_path=None,
                  private_key_path=None):
@@ -271,10 +272,11 @@ class Meta(object):
         self.cache_ttl = cache_ttl
         self.rpc_type = rpc_type
         self.rpc_version = rpc_version
+        self.tls_enabled = tls_enabled
         self.root_cert_paths = root_cert_paths.split(":") if root_cert_paths is not None else None
         self.server_cert_path = server_cert_path
         self.private_key_path = private_key_path
-        self.cipher_suites = ["ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA386"]
+        self.cipher_suites = ["ECDHE-RSA-AES128-GCM-SHA256", "ECDHE-RSA-AES256-GCM-SHA384"]
 
 
 @six.add_metaclass(ABCMeta)
@@ -421,12 +423,8 @@ class Plugin(object):
                     "Exclusive": self.meta.exclusive,
                     "CacheTTL": self.meta.cache_ttl,
                     "RoutingStrategy": self.meta.routing_strategy,
-                    "RootCertPaths": self.meta.root_cert_paths,
-                    "CertPath": self.meta.server_cert_path,
-                    "PrivateKeyPath": self.meta.private_key_path,
-                    "Ciphers": self.meta.cipher_suites,
+                    "TLSEnabled": self.meta.tls_enabled,
                 },
-                "TLSEnabled": self._args.tls,
                 "ListenAddress": "127.0.0.1:{!s}".format(self._port),
                 "Token": None,
                 "PublicKey": None,
